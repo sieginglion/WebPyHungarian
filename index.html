@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+    <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+  </head>
+  <body id='body'>
+    <table id="myTable">
+      <tr>
+        <td><input type="text" name="key1"></td>
+        <td><input type="text" name="value1"></td>
+      </tr>
+      <tr>
+        <td><input type="text" name="key2"></td>
+        <td><input type="text" name="value2"></td>
+      </tr>
+    </table>
+    <button onclick="solve()">solve</button>
+    <py-config>
+      packages = ["numpy", "scipy"]
+    </py-config>
+    <py-script>
+import numpy as np
+from scipy.optimize import linear_sum_assignment
+import js
+from pyodide.ffi import create_proxy
+
+def solve(worker_to_tasks):
+    # Convert the worker-to-task dictionary to a matrix of task-worker compatibility
+    workers = sorted(list(worker_to_tasks.keys()))
+    all_tasks = sorted(list(set([task for tasks in worker_to_tasks.values() for task in tasks])))
+    tasks_dict = {task: i for i, task in enumerate(all_tasks)}
+    n_workers = len(workers)
+    n_tasks = len(all_tasks)
+    compatibility = np.zeros((n_workers, n_tasks))
+    for i, worker in enumerate(workers):
+        for task in worker_to_tasks[worker]:
+            j = tasks_dict[task]
+            compatibility[i, j] = 1
+
+    # Use the Hungarian algorithm to find the optimal assignment
+    row_ind, col_ind = linear_sum_assignment(-compatibility)
+
+    # Check if there are unassigned workers and add empty rows to the assignment matrix if necessary
+    if len(row_ind) < n_workers:
+        unassigned = sorted(set(range(n_workers)) - set(row_ind))
+        row_ind = np.concatenate((row_ind, unassigned))
+        col_ind = np.concatenate((col_ind, np.full(len(unassigned), -1, dtype=int)))
+
+    # Print the assignment
+    for i in range(n_workers):
+        worker = workers[row_ind[i]]
+        task = all_tasks[col_ind[i]] if col_ind[i] >= 0 else None
+        display(f"{worker} is assigned to {task}", target='body')
+js.createObject(create_proxy(solve), "pySolve")
+    </py-script>
+    <script>
+      function createObject(object, variableName){
+          //Bind a variable whose name is the string variableName
+          // to the object called 'object'
+          let execString = variableName + " = object"
+          console.log("Running '" + execString + "'");
+          eval(execString)
+      }
+      function solve() {
+        const obj = new Map();
+        const myTable = document.getElementById("myTable");
+        const rows = myTable.rows;
+        for (let i = 0; i < rows.length; i++) {
+          const cells = rows[i].cells;
+          const k = cells[0].querySelector("input").value
+          const rv = cells[1].querySelector("input").value;
+          if (k && rv) {
+            obj.set(k, rv.split(/\s+/));
+          }
+        }
+        pySolve(obj);
+      }
+    </script>
+  </body>
+</html>
